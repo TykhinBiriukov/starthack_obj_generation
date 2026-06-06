@@ -1,0 +1,7 @@
+uvicorn
+fastapi
+python-dotenv
+open3d
+pyngrok
+matplotlib
+requests
