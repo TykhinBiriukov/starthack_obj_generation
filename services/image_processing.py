@@ -8,11 +8,12 @@ from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 
 import requests
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+UPLOAD_DIR = Path(r"C:\tempt\uploads")
 logger = logging.getLogger(__name__)
 
 
@@ -75,6 +76,33 @@ def _download_zip(zip_url: str, zip_path: Path) -> None:
     except requests.RequestException as exc:
         logger.exception("Could not download zip file from %s", zip_url)
         raise HTTPException(status_code=400, detail=f"Could not download zip file: {exc}") from exc
+
+
+def save_uploaded_zip(file: UploadFile, upload_dir: Path = UPLOAD_DIR) -> dict:
+    filename = Path(file.filename or "uploaded.zip").name
+    if Path(filename).suffix.lower() != ".zip":
+        logger.warning("Rejected uploaded file with non-zip filename: %s", filename)
+        raise HTTPException(status_code=400, detail="Uploaded file must be a .zip file")
+
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Ensured zip upload directory exists: %s", upload_dir)
+
+    destination = upload_dir / filename
+    logger.info("Saving uploaded zip to %s", destination)
+    try:
+        with destination.open("wb") as output_file:
+            shutil.copyfileobj(file.file, output_file)
+    finally:
+        file.file.close()
+
+    file_size = destination.stat().st_size
+    logger.info("Saved uploaded zip to %s with %s bytes", destination, file_size)
+    return {
+        "message": "Zip file uploaded successfully",
+        "filename": filename,
+        "path": str(destination),
+        "size_bytes": file_size,
+    }
 
 
 def images_to_obj_processing(zip_url: str, print_paths: bool = False) -> FileResponse:
