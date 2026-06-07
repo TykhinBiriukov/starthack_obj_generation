@@ -137,7 +137,7 @@ def images_to_obj_processing(zip_url: str, print_paths: bool = False) -> FileRes
                 zip_file.extract(member, input_dir)
                 logger.info("Extracted image member: %s", member)
 
-        script_path = r"C:\Users\tykhi\Documents\Projects\HackathonStartVienna\scripts\run.bat"
+        script_path = Path(__file__).resolve().parent.parent / "scripts" / "run.bat"
         logger.info("Starting RealityScan script: %s", script_path)
         return_code = subprocess.Popen(script_path).wait()
         logger.info("RealityScan script finished with return code %s", return_code)
