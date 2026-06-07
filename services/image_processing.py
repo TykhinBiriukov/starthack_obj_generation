@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
-UPLOAD_DIR = Path(r"C:\tempt\uploads")
+UPLOAD_DIR = Path(r"C:\uploads")
 logger = logging.getLogger(__name__)
 
 
@@ -113,7 +113,7 @@ def images_to_obj_processing(zip_url: str, print_paths: bool = False) -> FileRes
         raise HTTPException(status_code=400, detail="zip_url must be an HTTP or HTTPS URL")
     logger.info("Validated zip_url scheme: %s", parsed_url.scheme)
 
-    temp_root = Path(r"C:\tempt")
+    temp_root = Path(r"C:\temp")
     if temp_root.exists():
         logger.info("Removing existing temporary directory: %s", temp_root)
         shutil.rmtree(temp_root)
