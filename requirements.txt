@@ -6,4 +6,3 @@ pyngrok
 matplotlib
 requests
 python-multipart
-pillow
