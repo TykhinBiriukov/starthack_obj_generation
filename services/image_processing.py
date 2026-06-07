@@ -10,10 +10,14 @@ from zipfile import BadZipFile, ZipFile
 import requests
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from PIL import Image, ImageEnhance, ImageFilter, ImageStat, UnidentifiedImageError
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 UPLOAD_DIR = Path(r"C:\uploads")
+BLUR_THRESHOLD = 18.0
+CONTRAST_FACTOR = 1.15
+SHARPNESS_FACTOR = 1.10
 logger = logging.getLogger(__name__)
 
 
@@ -61,6 +65,97 @@ def _safe_zip_members(zip_file: ZipFile) -> Iterable[str]:
             continue
         if _is_image_file(member):
             yield member
+
+
+def _iter_image_paths(directory: Path) -> Iterable[Path]:
+    for path in directory.rglob("*"):
+        if path.is_file() and _is_image_file(path.name):
+            yield path
+
+
+def _image_edge_variance(image: Image.Image) -> float:
+    edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
+    return ImageStat.Stat(edges).var[0]
+
+
+def _save_processed_image(image: Image.Image, path: Path) -> None:
+    image_format = Image.registered_extensions().get(path.suffix.lower())
+    save_kwargs = {}
+    if image_format == "JPEG":
+        save_kwargs = {"quality": 95, "optimize": True}
+        if image.mode not in {"RGB", "L"}:
+            image = image.convert("RGB")
+
+    image.save(path, format=image_format, **save_kwargs)
+
+
+def remove_blurry_images(directory: Path, blur_threshold: float = BLUR_THRESHOLD) -> int:
+    removed_count = 0
+    for image_path in _iter_image_paths(directory):
+        try:
+            with Image.open(image_path) as image:
+                edge_variance = _image_edge_variance(image)
+        except (OSError, UnidentifiedImageError) as exc:
+            logger.warning("Could not inspect image %s: %s", image_path, exc)
+            continue
+
+        if edge_variance < blur_threshold:
+            image_path.unlink()
+            removed_count += 1
+            logger.info("Removed blurry image %s with edge variance %.2f", image_path, edge_variance)
+
+    logger.info("Removed %s blurry images from %s", removed_count, directory)
+    return removed_count
+
+
+def add_contrast(directory: Path, factor: float = CONTRAST_FACTOR) -> int:
+    processed_count = 0
+    for image_path in _iter_image_paths(directory):
+        try:
+            with Image.open(image_path) as image:
+                image.load()
+                enhanced_image = ImageEnhance.Contrast(image).enhance(factor)
+                _save_processed_image(enhanced_image, image_path)
+        except (OSError, UnidentifiedImageError) as exc:
+            logger.warning("Could not add contrast to image %s: %s", image_path, exc)
+            continue
+
+        processed_count += 1
+        logger.info("Added contrast to image %s", image_path)
+
+    logger.info("Added contrast to %s images in %s", processed_count, directory)
+    return processed_count
+
+
+def add_sharpening(directory: Path, factor: float = SHARPNESS_FACTOR) -> int:
+    processed_count = 0
+    for image_path in _iter_image_paths(directory):
+        try:
+            with Image.open(image_path) as image:
+                image.load()
+                sharpened_image = ImageEnhance.Sharpness(image).enhance(factor)
+                _save_processed_image(sharpened_image, image_path)
+        except (OSError, UnidentifiedImageError) as exc:
+            logger.warning("Could not sharpen image %s: %s", image_path, exc)
+            continue
+
+        processed_count += 1
+        logger.info("Sharpened image %s", image_path)
+
+    logger.info("Sharpened %s images in %s", processed_count, directory)
+    return processed_count
+
+
+def preprocess_images(directory: Path) -> dict:
+    logger.info("Starting image preprocessing in %s", directory)
+    removed_blurry = remove_blurry_images(directory)
+    contrast_added = add_contrast(directory)
+    sharpened = add_sharpening(directory)
+    return {
+        "removed_blurry": removed_blurry,
+        "contrast_added": contrast_added,
+        "sharpened": sharpened,
+    }
 
 
 def _download_zip(zip_url: str, zip_path: Path) -> None:
@@ -136,6 +231,9 @@ def images_to_obj_processing(zip_url: str, print_paths: bool = False) -> FileRes
             for member in image_members:
                 zip_file.extract(member, input_dir)
                 logger.info("Extracted image member: %s", member)
+
+        preprocessing_result = preprocess_images(input_dir)
+        logger.info("Image preprocessing result: %s", preprocessing_result)
 
         script_path = Path(__file__).resolve().parent.parent / "scripts" / "run.bat"
         logger.info("Starting RealityScan script: %s", script_path)
